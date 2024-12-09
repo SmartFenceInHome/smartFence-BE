@@ -1,16 +1,16 @@
 import requests
-import json
 
-# API 엔드포인트 URL
 url = "https://api.flrou.site/test"
+headers = {
+    'Content-Type': 'application/json'
+}
 
-# 전송할 데이터
 data = {
     "key": "value"
 }
 
-# POST 요청 보내기
-response = requests.post(url, json=data)
+response = requests.post(url, json=data, headers=headers)
 
-# 응답 확인
-print(response.json())
+print('Status Code:', response.status_code)
+# print('Message:', response.message)
+print('Response Text:', response.text)
