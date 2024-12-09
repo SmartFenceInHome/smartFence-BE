@@ -145,5 +145,5 @@ if __name__ == '__main__':
     ultrasonic_thread.start()
     
     from gevent import pywsgi
-    server = pywsgi.WSGIServer(('0.0.0.0', 8000), app)
+    server = pywsgi.WSGIServer(('0.0.0.0', 8080), app)
     server.serve_forever()
