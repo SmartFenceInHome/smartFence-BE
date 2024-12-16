@@ -10,12 +10,16 @@ import base64
 from io import BytesIO
 from threading import Thread
 
-sio = socketio.Server()
+sio = socketio.Server(
+    cors_allowed_origins=[
+        'http://flrou.site',
+        'http://localhost:5173',
+    ],
+    async_mode='gevent'
+)
 app = socketio.WSGIApp(sio)
 
-# TODO : connect with model server
-# YOLO_SERVER_URL = "http://your-yolo-server:port/detect"
-# YOLO_SERVER_URL = "https://api.flrou.site/detect"
+YOLO_SERVER_URL = "http://api.flrou.site/detect"
 
 TRIG_PIN = 24
 ECHO_PIN = 23
@@ -32,7 +36,7 @@ PWM_SERVO.start(0)
 
 camera = picamera.PiCamera()
 
-last_detection = True # default = False
+last_detection = False # default = False
 current_distance = 0
 
 def capture_and_detect():
@@ -43,22 +47,21 @@ def capture_and_detect():
             camera.capture(stream, format='jpeg')
             image_base64 = base64.b64encode(stream.getvalue()).decode('utf-8')
 
+            print('get images from camera')
             sio.emit('camera_frame', {'image': image_base64})
 
-            # response = requests.post(YOLO_SERVER_URL, 
-            #     json={'image': image_base64},
-            #     timeout=5
-            # )
+            response = requests.post(YOLO_SERVER_URL, 
+                json={'image': image_base64},
+                timeout=5
+            )
 
-            detected = False
-            # if response.status_code == 200:
-            #     last_detection = response.json().get('detected', False)
+            if response.status_code == 200:
+                last_detection = response.json().get('detected', False)
 
             time.sleep(1)
 
         except Exception as e:
-            print(f"YOLO server connect failed")
-            # print(f"YOLO server connect failed: {e}")
+            print("YOLO server connect failed")
             time.sleep(1)
             continue    
 
@@ -75,10 +78,10 @@ def monitor_ultrasonic():
                 time.sleep(5) 
                 set_servo_angle(0)
                 
-            time.sleep(0.1)
+            time.sleep(1)
         except Exception as e:
             print(f"ultrasonic failed: {e}")
-            time.sleep(0.1)
+            time.sleep(1)
             continue
 
 
@@ -145,5 +148,12 @@ if __name__ == '__main__':
     ultrasonic_thread.start()
     
     from gevent import pywsgi
-    server = pywsgi.WSGIServer(('0.0.0.0', 8080), app)
+    from geventwebsocket.handler import WebSocketHandler
+
+    server = pywsgi.WSGIServer(
+        ('0.0.0.0', 8080),
+        app, 
+        handler_class=WebSocketHandler
+    )
+    print("WebSocket server is running on port 8080...")
     server.serve_forever()
