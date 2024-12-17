@@ -14,6 +14,7 @@ sio = socketio.Server(
     cors_allowed_origins=[
         'http://flrou.site',
         'http://localhost:5173',
+        '*',
     ],
     async_mode='gevent'
 )
@@ -38,6 +39,7 @@ camera = picamera.PiCamera()
 
 last_detection = False # default = False
 current_distance = 0
+isOpen = False # survo motor
 
 def capture_and_detect():
     global last_detection
@@ -50,19 +52,19 @@ def capture_and_detect():
             print('get images from camera')
             sio.emit('camera_frame', {'image': image_base64})
 
-            response = requests.post(YOLO_SERVER_URL, 
-                json={'image': image_base64},
-                timeout=5
-            )
+            # response = requests.post(YOLO_SERVER_URL, 
+            #     json={'image': image_base64},
+            #     timeout=5
+            # )
 
-            if response.status_code == 200:
-                last_detection = response.json().get('detected', False)
+            # if response.status_code == 200:
+            #     last_detection = response.json().get('detected', False)
 
-            time.sleep(1)
+            time.sleep(3)
 
         except Exception as e:
             print("YOLO server connect failed")
-            time.sleep(1)
+            time.sleep(3)
             continue    
 
 def monitor_ultrasonic():
@@ -73,15 +75,14 @@ def monitor_ultrasonic():
             print("distance: ", current_distance)
             sio.emit('ultrasonic_data', {'distance': current_distance})
 
-            if last_detection and current_distance <= 10:
-                set_servo_angle(90)
-                time.sleep(5) 
-                set_servo_angle(0)
+            if last_detection and current_distance <= 50:
+                set_servo_angle(False)
+                time.sleep(3) 
                 
-            time.sleep(1)
+            time.sleep(3)
         except Exception as e:
             print(f"ultrasonic failed: {e}")
-            time.sleep(1)
+            time.sleep(3)
             continue
 
 
@@ -100,14 +101,20 @@ def get_ultrasonic_distance():
     distance = pulse_duration * 17150
     return round(distance, 2)
 
-def check_distance_and_detect():
-    distance = get_ultrasonic_distance()
-    return distance <= 50 and last_detection
+def set_servo_angle(isOpen):
+    if isOpen:
+        # 반시계 방향 (0 -> 125)
+        for duty_cycle in range(0, 126, 5):  # 2.5% ~ 12.5%
+            print(duty_cycle)
+            PWM_SERVO.ChangeDutyCycle(duty_cycle / 10)
+            time.sleep(0.1)
+    else:
+        # 시계 방향 (125 -> 0)
+        for duty_cycle in range(125, -1, -5):  # 12.5% ~ 2.5%
+            print(duty_cycle)
+            PWM_SERVO.ChangeDutyCycle(duty_cycle / 10)
+            time.sleep(0.1)
 
-def set_servo_angle(angle):
-    duty = angle / 18 + 2.5
-    PWM_SERVO.ChangeDutyCycle(duty)
-    time.sleep(0.3)
 
 @sio.event
 def connect(sid, environ):
@@ -117,22 +124,22 @@ def connect(sid, environ):
 def disconnect(sid):
     print(f'client disconnect: {sid}')
 
-@sio.event
-def get_ultrasonic(sid):
-    sio.emit('ultrasonic_data', {'distance': current_distance}, room=sid)
+# @sio.event
+# def get_ultrasonic(sid):
+#     sio.emit('ultrasonic_data', {'distance': current_distance}, room=sid)
 
 @sio.event
 def move_servo(sid, data):
+    print('move_servo : ', last_detection, current_distance)
+
     isOpen = data.get('isOpen', False)
     distance = get_ultrasonic_distance()
     detected = False
 
-    if last_detection and current_distance <= 10:
-        detected = True
-        if isOpen:
-            set_servo_angle(90)
-        else:
-            set_servo_angle(0)
+    if isOpen:
+        set_servo_angle(True)
+    else:
+        set_servo_angle(False)
     
     sio.emit('servo_status', {
         'status': isOpen,

@@ -8,7 +8,7 @@ import torch
 app = Flask(__name__)
 
 yolo_base = YOLO('yolov8n.pt')
-yolo_custom = YOLO('/detect_model/best.pt')
+yolo_custom = YOLO('detect_model/best.pt')
 
 coco_class_names = {0: 'person', 15: 'cat', 16: 'dog', 78: 'teddy bear'}
 custom_class_names = {0: 'OldPeople', 1: 'baby'}
