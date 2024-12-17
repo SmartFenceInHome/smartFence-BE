@@ -55,15 +55,18 @@ def detect_objects():
 
             if cls in coco_class_names:
                 total_predictions[cls] += 1
-                correct_predictions[cls] += 1
-                label = f"{get_class_name(cls, False)} {conf:.2f}"
+                if conf > 0.5:
+                    correct_predictions[cls] += 1
+                coco_label = f"{get_class_name(cls, False)} {conf:.2f}"
             
             if cls in custom_class_names:
                 total_predictions_custom[cls] += 1
-                correct_predictions_custom[cls] += 1
-                label = f"{get_class_name(cls, True)} {conf:.2f}"
+                if conf > 0.5:
+                    correct_predictions_custom[cls] += 1
+                custom_label = f"{get_class_name(cls, True)} {conf:.2f}"
 
-            print(label)
+            print(coco_label)
+            print(custom_label)
 
             for cls in coco_class_names:
                 accuracy = (correct_predictions[cls] / total_predictions[cls]) * 100 if total_predictions[cls] > 0 else 0

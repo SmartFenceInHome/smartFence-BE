@@ -50,7 +50,7 @@ def capture_and_detect():
             camera.capture(stream, format='jpeg')
             image_base64 = base64.b64encode(stream.getvalue()).decode('utf-8')
 
-            print('get images from camera')
+            # print('get images from camera')
             sio.emit('camera_frame', {'image': image_base64})
 
             response = requests.post(
@@ -59,13 +59,13 @@ def capture_and_detect():
                 timeout=10,
                 headers={'Content-Type': 'application/json'}
             )
-            print(f'YOLO response status: {response.status_code}')
+            # print(f'YOLO response status: {response.status_code}')
 
             if response.status_code == 200:
                 last_detection = response.json().get('detected', False)
                 print('last_detection : ', last_detection)
 
-            # time.sleep(3)
+            time.sleep(3)
 
         except requests.exceptions.ConnectionError as e:
             print(f"연결 오류: {str(e)}")
@@ -77,40 +77,56 @@ def capture_and_detect():
             print(f"기타 오류: {str(e)}")
             time.sleep(3)   
 
+def get_ultrasonic_distance():
+    try:
+        GPIO.output(TRIG_PIN, GPIO.LOW)
+        time.sleep(0.2)
+
+        GPIO.output(TRIG_PIN, GPIO.HIGH)
+        time.sleep(0.00001)
+        GPIO.output(TRIG_PIN, GPIO.LOW)
+
+        timeout = time.time() + 2.0
+
+        pulse_start = time.time()
+        while GPIO.input(ECHO_PIN) == 0:
+            pulse_start = time.time()
+            if time.time() > timeout:
+                raise Exception("timeout - trigger")
+            time.sleep(0.00001)
+
+        pulse_end = time.time()
+        while GPIO.input(ECHO_PIN) == 1:
+            pulse_end = time.time()
+            if time.time() > timeout:
+                raise Exception("timeout - echo")
+            time.sleep(0.00001)
+
+        pulse_duration = pulse_end - pulse_start
+        distance = pulse_duration * 17150
+        return round(distance, 2)
+    except Exception as e:
+        print(f"get distance failed: {e}")
+        return -1
+
 def monitor_ultrasonic():
     global current_distance
     while True:
         try:
             current_distance = get_ultrasonic_distance()
-            print("distance: ", current_distance)
-            sio.emit('ultrasonic_data', {'distance': current_distance})
+            if current_distance >= 0:
+                print("current_distance : ", current_distance)
+                sio.emit('ultrasonic_data', {'distance': current_distance})
 
-            # check conditions
-            if last_detection and current_distance <= 50:
-                set_servo_angle(False)
-                time.sleep(3) 
+                # check conditions
+                if last_detection and current_distance <= 50:
+                    set_servo_angle(False)
+                    time.sleep(3) 
                 
-            time.sleep(3)
+            time.sleep(0.5)
         except Exception as e:
             print(f"ultrasonic failed: {e}")
-            time.sleep(3)
-            continue
-
-
-def get_ultrasonic_distance():
-    GPIO.output(TRIG_PIN, GPIO.HIGH)
-    time.sleep(0.00001)
-    GPIO.output(TRIG_PIN, GPIO.LOW)
-
-    while GPIO.input(ECHO_PIN) == 0:
-        pulse_start = time.time()
-
-    while GPIO.input(ECHO_PIN) == 1:
-        pulse_end = time.time()
-
-    pulse_duration = pulse_end - pulse_start
-    distance = pulse_duration * 17150
-    return round(distance, 2)
+            time.sleep(1)
 
 def set_servo_angle(isOpen):
     if isOpen:
@@ -144,8 +160,6 @@ def disconnect(sid):
 @sio.event
 def move_servo(sid, data):
     isOpen = data.get('isOpen', False)
-    distance = get_ultrasonic_distance()
-    detected = False
 
     if isOpen:
         set_servo_angle(True)
@@ -154,8 +168,8 @@ def move_servo(sid, data):
     
     sio.emit('servo_status', {
         'status': isOpen,
-        'distance': distance,
-        'object_detected': detected
+        'distance': current_distance,
+        'object_detected': last_detection
     }, room=sid)
 
 if __name__ == '__main__':
