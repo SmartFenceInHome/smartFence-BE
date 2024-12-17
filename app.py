@@ -21,6 +21,7 @@ sio = socketio.Server(
 app = socketio.WSGIApp(sio)
 
 YOLO_SERVER_URL = "http://api.flrou.site/detect"
+# YOLO_SERVER_URL = "http://183.96.249.59:5000/detect"
 
 TRIG_PIN = 24
 ECHO_PIN = 23
@@ -52,21 +53,29 @@ def capture_and_detect():
             print('get images from camera')
             sio.emit('camera_frame', {'image': image_base64})
 
-            response = requests.post(YOLO_SERVER_URL, 
+            response = requests.post(
+                YOLO_SERVER_URL, 
                 json={'image': image_base64},
-                timeout=5
+                timeout=10,
+                headers={'Content-Type': 'application/json'}
             )
+            print(f'YOLO response status: {response.status_code}')
 
             if response.status_code == 200:
                 last_detection = response.json().get('detected', False)
                 print('last_detection : ', last_detection)
 
-            time.sleep(3)
+            # time.sleep(3)
 
-        except Exception as e:
-            print("YOLO server connect failed")
+        except requests.exceptions.ConnectionError as e:
+            print(f"연결 오류: {str(e)}")
             time.sleep(3)
-            continue    
+        except requests.exceptions.Timeout as e:
+            print(f"시간 초과: {str(e)}")
+            time.sleep(3)
+        except Exception as e:
+            print(f"기타 오류: {str(e)}")
+            time.sleep(3)   
 
 def monitor_ultrasonic():
     global current_distance

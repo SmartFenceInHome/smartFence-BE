@@ -1,4 +1,6 @@
 from flask import Flask, request, jsonify
+from werkzeug.exceptions import RequestEntityTooLarge
+
 from ultralytics import YOLO
 import cv2
 import numpy as np
@@ -6,6 +8,7 @@ import base64
 import torch
 
 app = Flask(__name__)
+app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB
 
 yolo_base = YOLO('yolov8n.pt')
 yolo_custom = YOLO('detect_model/best.pt')
@@ -32,7 +35,7 @@ def get_class_name(cls, is_custom):
 def detect_objects():
     print('start detecting')
     try:
-        # base64 이미지 디코딩
+        # base64 decoding
         image_data = base64.b64decode(request.json['image'])
         nparr = np.frombuffer(image_data, np.uint8)
         image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
@@ -53,12 +56,12 @@ def detect_objects():
             if cls in coco_class_names:
                 total_predictions[cls] += 1
                 correct_predictions[cls] += 1
-                label = f"{get_class_name(cls, False)} {conf:.2f}"  # COCO 클래스용
+                label = f"{get_class_name(cls, False)} {conf:.2f}"
             
             if cls in custom_class_names:
                 total_predictions_custom[cls] += 1
                 correct_predictions_custom[cls] += 1
-                label = f"{get_class_name(cls, True)} {conf:.2f}"  # 커스텀 클래스용
+                label = f"{get_class_name(cls, True)} {conf:.2f}"
 
             print(label)
 
