@@ -52,13 +52,14 @@ def capture_and_detect():
             print('get images from camera')
             sio.emit('camera_frame', {'image': image_base64})
 
-            # response = requests.post(YOLO_SERVER_URL, 
-            #     json={'image': image_base64},
-            #     timeout=5
-            # )
+            response = requests.post(YOLO_SERVER_URL, 
+                json={'image': image_base64},
+                timeout=5
+            )
 
-            # if response.status_code == 200:
-            #     last_detection = response.json().get('detected', False)
+            if response.status_code == 200:
+                last_detection = response.json().get('detected', False)
+                print('last_detection : ', last_detection)
 
             time.sleep(3)
 
@@ -75,6 +76,7 @@ def monitor_ultrasonic():
             print("distance: ", current_distance)
             sio.emit('ultrasonic_data', {'distance': current_distance})
 
+            # check conditions
             if last_detection and current_distance <= 50:
                 set_servo_angle(False)
                 time.sleep(3) 
@@ -104,12 +106,14 @@ def get_ultrasonic_distance():
 def set_servo_angle(isOpen):
     if isOpen:
         # 반시계 방향 (0 -> 125)
+        print('=====> open the door')
         for duty_cycle in range(0, 126, 5):  # 2.5% ~ 12.5%
             print(duty_cycle)
             PWM_SERVO.ChangeDutyCycle(duty_cycle / 10)
             time.sleep(0.1)
     else:
         # 시계 방향 (125 -> 0)
+        print('=====> close the door')
         for duty_cycle in range(125, -1, -5):  # 12.5% ~ 2.5%
             print(duty_cycle)
             PWM_SERVO.ChangeDutyCycle(duty_cycle / 10)
@@ -130,8 +134,6 @@ def disconnect(sid):
 
 @sio.event
 def move_servo(sid, data):
-    print('move_servo : ', last_detection, current_distance)
-
     isOpen = data.get('isOpen', False)
     distance = get_ultrasonic_distance()
     detected = False

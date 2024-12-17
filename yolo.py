@@ -30,6 +30,7 @@ def get_class_name(cls, is_custom):
 
 @app.route('/detect', methods=['POST'])
 def detect_objects():
+    print('start detecting')
     try:
         # base64 이미지 디코딩
         image_data = base64.b64decode(request.json['image'])
