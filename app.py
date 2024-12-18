@@ -41,6 +41,13 @@ camera = picamera.PiCamera()
 last_detection = False # default = False
 current_distance = 0
 isOpen = False # survo motor
+servo_locked = False
+
+def cleanup():
+    print("program stop...")
+    GPIO.cleanup()
+    camera.close()
+    PWM_SERVO.stop()
 
 def capture_and_detect():
     global last_detection
@@ -80,13 +87,16 @@ def capture_and_detect():
 def get_ultrasonic_distance():
     try:
         GPIO.output(TRIG_PIN, GPIO.LOW)
-        time.sleep(0.2)
+        time.sleep(0.5)
 
         GPIO.output(TRIG_PIN, GPIO.HIGH)
         time.sleep(0.00001)
         GPIO.output(TRIG_PIN, GPIO.LOW)
 
-        timeout = time.time() + 2.0
+        timeout = time.time() + 5.0
+
+        while GPIO.input(ECHO_PIN) == 1:
+            time.sleep(0.00001)
 
         pulse_start = time.time()
         while GPIO.input(ECHO_PIN) == 0:
@@ -104,24 +114,33 @@ def get_ultrasonic_distance():
 
         pulse_duration = pulse_end - pulse_start
         distance = pulse_duration * 17150
-        return round(distance, 2)
+
+        if 2 <= distance <= 400:
+            return round(distance, 2)
+        else:
+            return -1
     except Exception as e:
         print(f"get distance failed: {e}")
         return -1
 
 def monitor_ultrasonic():
-    global current_distance
+    global current_distance, servo_locked
     while True:
         try:
             current_distance = get_ultrasonic_distance()
             if current_distance >= 0:
                 print("current_distance : ", current_distance)
-                sio.emit('ultrasonic_data', {'distance': current_distance})
+                sio.emit('ultrasonic_data', {
+                    'distance': current_distance,
+                    'object_detected': last_detection
+                })
 
                 # check conditions
-                if last_detection and current_distance <= 50:
+                if last_detection and current_distance <= 50 and not servo_locked:
                     set_servo_angle(False)
-                    time.sleep(3) 
+                    servo_locked = True
+                    time.sleep(3)
+                    sio.emit('warning')
                 
             time.sleep(0.5)
         except Exception as e:
@@ -130,14 +149,14 @@ def monitor_ultrasonic():
 
 def set_servo_angle(isOpen):
     if isOpen:
-        # 반시계 방향 (0 -> 125)
+        # clock (0 -> 125)
         print('=====> open the door')
         for duty_cycle in range(0, 126, 5):  # 2.5% ~ 12.5%
             print(duty_cycle)
             PWM_SERVO.ChangeDutyCycle(duty_cycle / 10)
             time.sleep(0.1)
     else:
-        # 시계 방향 (125 -> 0)
+        # reverse clock (125 -> 0)
         print('=====> close the door')
         for duty_cycle in range(125, -1, -5):  # 12.5% ~ 2.5%
             print(duty_cycle)
@@ -153,18 +172,17 @@ def connect(sid, environ):
 def disconnect(sid):
     print(f'client disconnect: {sid}')
 
-# @sio.event
-# def get_ultrasonic(sid):
-#     sio.emit('ultrasonic_data', {'distance': current_distance}, room=sid)
-
 @sio.event
 def move_servo(sid, data):
+    global servo_locked
     isOpen = data.get('isOpen', False)
 
     if isOpen:
         set_servo_angle(True)
+        servo_locked = False
     else:
         set_servo_angle(False)
+        servo_locked = True
     
     sio.emit('servo_status', {
         'status': isOpen,
@@ -173,19 +191,35 @@ def move_servo(sid, data):
     }, room=sid)
 
 if __name__ == '__main__':
-    frame_thread = Thread(target=capture_and_detect, daemon=True)
-    frame_thread.start()
+    try:
+        print('start server')
+        frame_thread = Thread(target=capture_and_detect, daemon=True)
+        frame_thread.start()
 
-    ultrasonic_thread = Thread(target=monitor_ultrasonic, daemon=True)
-    ultrasonic_thread.start()
-    
-    from gevent import pywsgi
-    from geventwebsocket.handler import WebSocketHandler
+        ultrasonic_thread = Thread(target=monitor_ultrasonic, daemon=True)
+        ultrasonic_thread.start()
+        
+        from gevent import pywsgi
+        from geventwebsocket.handler import WebSocketHandler
 
-    server = pywsgi.WSGIServer(
-        ('0.0.0.0', 8080),
-        app, 
-        handler_class=WebSocketHandler
-    )
-    print("WebSocket server is running on port 8080...")
-    server.serve_forever()
+        server = pywsgi.WSGIServer(
+            ('0.0.0.0', 8080),
+            app, 
+            handler_class=WebSocketHandler
+        )
+        print("WebSocket server is running on port 8080...")
+        server.serve_forever()
+
+        import signal
+        def signal_handler(sig, frame):
+            print("\n프로그램 종료 요청됨")
+            cleanup()
+            server.stop()
+            sys.exit(0)
+        
+        signal.signal(signal.SIGINT, signal_handler)
+        server.serve_forever()
+        
+    except Exception as e:
+        print(f"서버 오류 발생: {str(e)}")
+        cleanup()
