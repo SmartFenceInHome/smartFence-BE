@@ -40,7 +40,7 @@ camera = picamera.PiCamera()
 
 last_detection = False # default = False
 current_distance = 0
-isOpen = False # survo motor
+isOpen = True # survo motor
 servo_locked = False
 
 def cleanup():
@@ -149,19 +149,25 @@ def monitor_ultrasonic():
 
 def set_servo_angle(isOpen):
     if isOpen:
-        # clock (0 -> 125)
+        # open - reverse clock (125 -> 0)
         print('=====> open the door')
         for duty_cycle in range(0, 126, 5):  # 2.5% ~ 12.5%
             print(duty_cycle)
             PWM_SERVO.ChangeDutyCycle(duty_cycle / 10)
             time.sleep(0.1)
     else:
-        # reverse clock (125 -> 0)
+        # close - clock (0 -> 125)
         print('=====> close the door')
         for duty_cycle in range(125, -1, -5):  # 12.5% ~ 2.5%
             print(duty_cycle)
             PWM_SERVO.ChangeDutyCycle(duty_cycle / 10)
             time.sleep(0.1)
+
+    sio.emit('servo_status', {
+        'status': isOpen,
+        'distance': current_distance,
+        'object_detected': last_detection
+    })
 
 
 @sio.event
@@ -174,15 +180,26 @@ def disconnect(sid):
 
 @sio.event
 def move_servo(sid, data):
-    global servo_locked
-    isOpen = data.get('isOpen', False)
+    global servo_locked, isOpen
+    requested_state = data.get('isOpen', False)
+    print('request move door : ', requested_state)
 
-    if isOpen:
+    if isOpen == requested_state:
+        sio.emit('servo_status', {
+            'status': isOpen,
+            'distance': current_distance,
+            'object_detected': last_detection
+        }, room=sid)
+        return
+
+    if requested_state:
         set_servo_angle(True)
         servo_locked = False
+        isOpen = True
     else:
         set_servo_angle(False)
         servo_locked = True
+        isOpen = False
     
     sio.emit('servo_status', {
         'status': isOpen,
@@ -193,6 +210,8 @@ def move_servo(sid, data):
 if __name__ == '__main__':
     try:
         print('start server')
+        set_servo_angle(True)
+
         frame_thread = Thread(target=capture_and_detect, daemon=True)
         frame_thread.start()
 

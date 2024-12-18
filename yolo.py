@@ -81,8 +81,9 @@ def detect_objects():
                 accuracy = (correct_predictions_custom[cls] / total_predictions_custom[cls]) * 100 if total_predictions_custom[cls] > 0 else 0
                 print(f"Custom Class {get_class_name(cls, is_custom=True)} - Accuracy: {accuracy:.2f}%")
         
-        total_detections = base_detections + custom_detections
+        total_detections = total_predictions + total_predictions_custom
         detected = total_detections > 0
+        print('detected :', detected)
         print('total_detections :', total_detections)
         
         return jsonify({
